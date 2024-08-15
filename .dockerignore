@@ -10,3 +10,5 @@ LICENSE
 .vscode
 __pycache__
 env
+.venv
+credentials
