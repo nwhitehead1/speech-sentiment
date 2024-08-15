@@ -1,4 +1,5 @@
 import base64
+import wave
 from typing import Final
 
 from flask import Flask, jsonify, request
@@ -17,29 +18,64 @@ speech_client = speech_v2.SpeechClient()
 language_client = language_v2.LanguageServiceClient()
 
 
-@app.route("/sentiment", methods=["GET"])
+@app.route("/sentiment/text", methods=["POST"])
 def get_sentiment():
-    text = request.args.get("text")
-    if not text:
-        return jsonify({"error": "No text data provided"}), 400
-    sentiment = _analyze_sentiment(text=text)
-    return jsonify(
-        {
-            "transcription": text,
-            "sentiment": {"score": sentiment.score, "magnitude": sentiment.magnitude},
-        }
-    )
+    if not request.is_json:
+        return (
+            jsonify(
+                {"error": 'Invalid input. JSON body with "text" field is required.'}
+            ),
+            400,
+        )
+    data = request.json
+    if "text" in data:
+        text = data.get("text")
+        sentiment = _analyze_sentiment(text=text)
+        return jsonify(
+            {
+                "transcription": text,
+                "sentiment": {
+                    "score": sentiment.score,
+                    "magnitude": sentiment.magnitude,
+                },
+            }
+        )
+    return jsonify({"error": 'Invalid JSON body, must contain "text" field.'}), 400
 
 
-@app.route("/sentiment/audio", methods=["GET"])
+@app.route("/sentiment/audio", methods=["POST"])
 def audio_sentiment():
-    audio = request.args.get("audio")
-    if not audio:
-        return jsonify({"error": "No audio data provided"}), 400
-    try:
-        audio_bytes = base64.b64decode(audio)
-    except Exception:
-        return jsonify({"error": "Failed to decode audio data"}), 400
+    if "file" in request.files:
+        audio_file = request.files.get("file")
+        if not audio_file.filename.endswith(".wav"):
+            return (
+                jsonify({"error": "Invalid file type. Only .wav files supported."}),
+                400,
+            )
+        with wave.open(audio_file, "rb") as wav_file:
+            n_frames = wav_file.getnframes()
+            audio_bytes = wav_file.readframes(n_frames)
+    elif request.is_json:
+        data = request.json
+        if "bytes" in data:
+            try:
+                audio_bytes = base64.b64decode(data.get("bytes"))
+            except Exception:
+                return jsonify({"error": "Failed to decode audio data"}), 400
+        else:
+            return (
+                jsonify({"error": 'Invalid JSON body, must contain "bytes" field.'}),
+                400,
+            )
+    else:
+        return (
+            jsonify(
+                {
+                    "error": 'Invalid inpiut. Provide a .wav file or JSON body with field "bytes".'
+                }
+            ),
+            400,
+        )
     try:
         text = _transcribe_audio(audio_bytes=audio_bytes)
         sentiment = _analyze_sentiment(text=text)
@@ -57,9 +93,8 @@ def audio_sentiment():
 
 
 def _analyze_sentiment(text: str) -> language_v2.Sentiment:
-    lang_client = language_v2.LanguageServiceClient()
     document = {"type_": language_v2.Document.Type.PLAIN_TEXT, "content": text}
-    response = lang_client.analyze_sentiment(document=document)
+    response = language_client.analyze_sentiment(document=document)
     return response.document_sentiment
 
 
@@ -75,9 +110,8 @@ def _transcribe_audio(
         raise ValueError(
             f"The size of the speech data exceeds the limit of {limit_mb}MB"
         )
-    client = speech_v2.SpeechClient()
     request = speech_v2.RecognizeRequest(config=config, content=audio_bytes)
-    response = client.recognize(request=request)
+    response = speech_client.recognize(request=request)
     return response.results[0].alternatives[0].transcript if response.results else ""
 
 
