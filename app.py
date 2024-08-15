@@ -57,21 +57,21 @@ def audio_sentiment():
             audio_bytes = wav_file.readframes(n_frames)
     elif request.is_json:
         data = request.json
-        if "bytes" in data:
+        if "audio" in data:
             try:
-                audio_bytes = base64.b64decode(data.get("bytes"))
+                audio_bytes = base64.b64decode(data.get("audio"))
             except Exception:
                 return jsonify({"error": "Failed to decode audio data"}), 400
         else:
             return (
-                jsonify({"error": 'Invalid JSON body, must contain "bytes" field.'}),
+                jsonify({"error": 'Invalid JSON body, must contain an "audio" field.'}),
                 400,
             )
     else:
         return (
             jsonify(
                 {
-                    "error": 'Invalid inpiut. Provide a .wav file or JSON body with field "bytes".'
+                    "error": 'Invalid inpiut. Provide a .wav file or JSON body with field "audio".'
                 }
             ),
             400,
