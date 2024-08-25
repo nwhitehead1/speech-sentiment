@@ -7,9 +7,13 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app.py .
 
-EXPOSE 5000
+EXPOSE 8080
 
 # Only needed for running locally. Do not push credentials JSON to compute!
-# ENV GOOGLE_APPLICATION_CREDENTIALS="credentials.json"
+# COPY credentials.json .
+# ENV GOOGLE_APPLICATION_CREDENTIALS=
+# ENV GCP_PROJECT_ID=
+# ENV GCP_LOCATION=
+# ENV GCP_RECOGNIZER=
 
-CMD [ "python", "app.py" ]
+CMD [ "gunicorn", "--workers", "2", "--bind", "0.0.0.0:8080", "app:app" ]
