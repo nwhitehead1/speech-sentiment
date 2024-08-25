@@ -1,0 +1,59 @@
+name: Deploy backend to Google Cloud
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    env:
+      IMAGE_NAME: team1-alpha-backend
+      REGION: us-east1
+      PORT: 8080
+      GOOGLE_REPOSITORY: us-east1-docker.pkg.dev
+      REGISTRY_NAME: team1-alpha-registry
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+        with:
+          fetch-depth: 0
+      - name: Get version
+        id: get-version
+        run: |
+          VERSION=$(echo ${{ github.sha }} | cut -c1-7)
+          echo "Building and deploying version $VERSION"
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+      - name: Authenticate with Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          credentials_json: ${{ secrets.GCP_CLOUD_AUTH_JSON }}
+      - name: Set up Google Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+      - name: Configure Docker with gcloud
+        run: |
+          gcloud auth configure-docker ${{ env.GOOGLE_REPOSITORY }}
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ env.IMAGE_NAME }} -f backend/Dockerfile .
+      - name: Tag Docker image
+        run: |
+          docker tag ${{ env.IMAGE_NAME }} ${{ env.GOOGLE_REPOSITORY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.get-version.outputs.version }}
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.GOOGLE_REPOSITORY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.get-version.outputs.version }}
+      - name: Deploy to Google Cloud Run
+        id: deploy
+        uses: google-github-actions/deploy-cloudrun@v2
+        with:
+          service: ${{ env.IMAGE_NAME }}
+          image: ${{ env.GOOGLE_REPOSITORY }}/${{ secrets.GCP_PROJECT_ID }}/${{ env.REGISTRY_NAME }}/${{ env.IMAGE_NAME }}:${{ steps.get-version.outputs.version }}
+          region: ${{ env.REGION }}
+          env_vars: |
+            GCP_PROJECT_ID=${{ secrets.GCP_PROJECT_ID }},
+            GCP_RECOGNIZER=${{ secrets.GCP_RECOGNIZER }}
+      - name: Print URI
+        run: |
+          echo "Deployed at ${{ steps.deploy.outputs.url }}"
